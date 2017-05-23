@@ -141,6 +141,7 @@ func (c *WeixinController) PayResult() {
 		c.ServeXML()
 	}()
 
+	logger.I("body: %s\n", string(c.Ctx.Input.RequestBody))
 	values := c.Input()
 	err := c.checkPayResult(values)
 	if err != nil {

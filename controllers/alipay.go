@@ -14,13 +14,12 @@ import (
 
 	"encoding/pem"
 
+	"crypto/sha1"
 	"crypto/x509"
 
 	"crypto/rsa"
 
 	"crypto"
-
-	"crypto/sha256"
 
 	"bytes"
 
@@ -34,7 +33,7 @@ type AlipayController struct {
 }
 
 func (c *AlipayController) rsaVerify(token []byte, base64Sign string, pubKey *rsa.PublicKey) error {
-	hash := sha256.New()
+	hash := sha1.New()
 	if _, err := bytes.NewReader(token).WriteTo(hash); err != nil {
 		return err
 	}
@@ -43,6 +42,8 @@ func (c *AlipayController) rsaVerify(token []byte, base64Sign string, pubKey *rs
 	if err != nil {
 		return err
 	}
+
+	logger.I("base64解码后的sign：%s", string(decodeSign))
 
 	if err := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hash.Sum(nil), decodeSign); err != nil {
 		return err
@@ -60,19 +61,23 @@ func (c *AlipayController) verifySign(values url.Values) error {
 		return errors.New(fmt.Sprintf("支付参数中没有签名信息，参数=%v", values))
 	}
 
+	// tradeStatus, ok := values["trade_state"]
+
 	for k := range values {
-		if k != "sign" && k != "sign_type" {
+		if k != "sign" && k != "sign_type" && k != "gmt_create" {
 			sortedKeys = append(sortedKeys, k)
 		}
 	}
 
 	sort.Strings(sortedKeys)
 	for _, k := range sortedKeys {
+		str += ampersand + k + "=" + values[k][0]
 		if len(ampersand) == 0 {
 			ampersand = "&"
 		}
-		str += ampersand + k + "=" + values[k][0]
 	}
+
+	logger.I("拼接后的字符串：%s", str)
 
 	pubKeyPath := beego.AppConfig.String("alipay::rsapublic")
 	data, err := ioutil.ReadFile(pubKeyPath)
@@ -91,20 +96,20 @@ func (c *AlipayController) verifySign(values url.Values) error {
 	}
 
 	if err = c.rsaVerify([]byte(str), sign[0], pubKey.(*rsa.PublicKey)); err != nil {
-		return errors.New(fmt.Sprintf("rsa验签失败，err=%s", err.Error()))
+		return errors.New(fmt.Sprintf("rsa验签失败，err=%s\nvalues=%v", err.Error(), values))
 	}
 	return nil
 }
 
 func (c *AlipayController) checkRequestParams(values url.Values) error {
-	sellerEmail, ok := values["seller_email"]
-	if !ok {
-		return errors.New(fmt.Sprintf("支付参数中没有seller_email字段，values=%v", values))
-	}
+	// sellerEmail, ok := values["seller_email"]
+	// if !ok {
+	// 	return errors.New(fmt.Sprintf("支付参数中没有seller_email字段，values=%v", values))
+	// }
 
-	if sellerEmail[0] != beego.AppConfig.String("alipay::selleremail") {
-		return errors.New(fmt.Sprintf("验证商户邮件失败，期望=%s，收到=%s", sellerEmail[0], beego.AppConfig.String("alipay::selleremail")))
-	}
+	// if sellerEmail[0] != beego.AppConfig.String("alipay::selleremail") {
+	// 	return errors.New(fmt.Sprintf("验证商户邮件失败，期望=%s，收到=%s", sellerEmail[0], beego.AppConfig.String("alipay::selleremail")))
+	// }
 
 	return c.verifySign(values)
 }
