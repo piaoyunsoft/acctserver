@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 
 	"io/ioutil"
 
@@ -21,9 +20,9 @@ import (
 
 	"crypto"
 
-	"bytes"
-
 	"encoding/base64"
+
+	"io"
 
 	"github.com/astaxie/beego"
 )
@@ -32,9 +31,9 @@ type AlipayController struct {
 	beego.Controller
 }
 
-func (c *AlipayController) rsaVerify(token []byte, base64Sign string, pubKey *rsa.PublicKey) error {
+func (c *AlipayController) rsaVerify(token string, base64Sign string, pubKey *rsa.PublicKey) error {
 	hash := sha1.New()
-	if _, err := bytes.NewReader(token).WriteTo(hash); err != nil {
+	if _, err := io.WriteString(hash, token); err != nil {
 		return err
 	}
 
@@ -45,7 +44,7 @@ func (c *AlipayController) rsaVerify(token []byte, base64Sign string, pubKey *rs
 
 	logger.I("base64解码后的sign：%s", string(decodeSign))
 
-	if err := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hash.Sum(nil), decodeSign); err != nil {
+	if err := rsa.VerifyPKCS1v15(pubKey, crypto.SHA1, hash.Sum(nil), decodeSign); err != nil {
 		return err
 	}
 	return nil
@@ -64,7 +63,7 @@ func (c *AlipayController) verifySign(values url.Values) error {
 	// tradeStatus, ok := values["trade_state"]
 
 	for k := range values {
-		if k != "sign" && k != "sign_type" && k != "gmt_create" {
+		if k != "sign" && k != "sign_type" {
 			sortedKeys = append(sortedKeys, k)
 		}
 	}
@@ -79,7 +78,7 @@ func (c *AlipayController) verifySign(values url.Values) error {
 
 	logger.I("拼接后的字符串：%s", str)
 
-	pubKeyPath := beego.AppConfig.String("alipay::rsapublic")
+	pubKeyPath := beego.AppConfig.String("alipay::alipaypublic")
 	data, err := ioutil.ReadFile(pubKeyPath)
 	if err != nil {
 		return errors.New(fmt.Sprintf("无法打开公钥文件，path=%s err=%s", pubKeyPath, err.Error()))
@@ -95,7 +94,7 @@ func (c *AlipayController) verifySign(values url.Values) error {
 		return errors.New(fmt.Sprintf("生成公钥失败，err=%s", err.Error()))
 	}
 
-	if err = c.rsaVerify([]byte(str), sign[0], pubKey.(*rsa.PublicKey)); err != nil {
+	if err = c.rsaVerify(str, sign[0], pubKey.(*rsa.PublicKey)); err != nil {
 		return errors.New(fmt.Sprintf("rsa验签失败，err=%s\nvalues=%v", err.Error(), values))
 	}
 	return nil
@@ -127,15 +126,25 @@ func (c *AlipayController) PayResult() {
 		return
 	}
 
-	passback_params, ok := values["passback_params"]
+	tradeStatus, ok := values["trade_status"]
 	if !ok {
-		logger.E("支付宝支付请求参数中没有附加的passback_params信息, values=%v", values)
+		logger.E("支付宝支付请求参数中没有交易状态trade_staus参数，values=%v", values)
 		return
 	}
 
-	totalFee, ok := values["total_amount"]
+	if tradeStatus[0] == "WAIT_BUYER_PAY" || tradeStatus[0] == "TRADE_CLOSED" {
+		resp = "success"
+		return
+	}
+
+	if tradeStatus[0] != "TRADE_SUCCESS" && tradeStatus[0] != "TRADE_FINISH" {
+		logger.E("支付宝支付请求参数中交易状态不正确，tradeStatus=%s", tradeStatus[0])
+		return
+	}
+
+	totalFee, ok := values["total_fee"]
 	if !ok {
-		logger.E("支付宝支付请求参数中没有支付金额total_amount参数，values=%v", values)
+		logger.E("支付宝支付请求参数中没有支付金额total_fee参数，values=%v", values)
 		return
 	}
 
@@ -145,26 +154,26 @@ func (c *AlipayController) PayResult() {
 		return
 	}
 
-	attachValues := strings.Split(passback_params[0], ",")
-	if len(attachValues) == 0 || len(attachValues[0]) == 0 {
-		logger.E("支付宝支付附加信息格式错误, passback_params=%s", passback_params[0])
+	outTradeNo, ok := values["out_trade_no"]
+	if !ok {
+		logger.E("支付宝支付请求参数中没有支付平台订单out_trade_no参数，values=%v", values)
 		return
 	}
 
-	orderId, err := strconv.ParseInt(attachValues[0], 10, 64)
+	orderId, err := strconv.ParseInt(outTradeNo[0], 10, 64)
 	if err != nil {
-		logger.E("支付宝支付转换订单信息失败, orderId=%s", attachValues[0])
+		logger.E("支付宝支付转换订单信息失败, orderId=%s", orderId)
 		return
 	}
 
 	price, err := strconv.ParseFloat(totalFee[0], 64)
 	if err != nil {
-		logger.E("微信支付转换支付金额失败, totalFee=%s", totalFee[0])
+		logger.E("支付宝支付转换支付金额失败, totalFee=%s", totalFee[0])
 		return
 	}
 
 	if !models.DeliveryProduct(orderId, price, transId[0], true) {
-		logger.E("微信支付发送商品失败!\n[sdk_order_id=%s]\n%v", transId[0], values)
+		logger.E("支付宝支付发送商品失败!\n[sdk_order_id=%s]\n%v", transId[0], values)
 		return
 	}
 

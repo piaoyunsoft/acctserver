@@ -1,14 +1,13 @@
 package controllers
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"moton/acctserver/models"
 	"moton/gjrobot/common"
 	"moton/logger"
 	"sort"
-
-	"net/url"
 
 	"fmt"
 
@@ -48,7 +47,6 @@ https://pay.weixin.qq.com/wiki/doc/api/app/app.php?chapter=9_7&index=3
 商家数据包	attach	否	String(128)	123456	商家数据包，原样返回
 支付完成时间	time_end	是	String(14)	20141030133525	支付完成时间，格式为yyyyMMddHHmmss，如2009年12月25日9点10分10秒表示为20091225091010。其他详见时间规则
 */
-
 type WeixinPayResultRequest struct {
 	XMLName       xml.Name `xml:"xml"`
 	AppId         string   `xml:"appid"`
@@ -65,7 +63,7 @@ type WeixinPayResultRequest struct {
 	FeeType       string   `xml:"fee_type"`
 	CashFee       int      `xml:"cash_fee"`
 	TransactionId string   `xml:"transaction_id"`
-	OutiTradeNo   string   `xml:"out_trade_no"`
+	OutTradeNo    string   `xml:"out_trade_no"`
 	Attach        string   `xml:"attach"`
 	TimeEnd       string   `xml:"time_end"`
 }
@@ -87,9 +85,32 @@ type WeixinController struct {
 	beego.Controller
 }
 
-func (c *WeixinController) makeSign(values url.Values) string {
+func (c *WeixinController) parseXmlToMap(data []byte) map[string]string {
+	values := make(map[string]string)
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	var key string
+	for t, err := decoder.Token(); err == nil; t, err = decoder.Token() {
+		switch token := t.(type) {
+		case xml.StartElement:
+			key = token.Name.Local
+		case xml.EndElement:
+			key = ""
+		case xml.CharData:
+			if key == "" {
+				break
+			}
+			if key != "xml" {
+				values[key] = string([]byte(token))
+			}
+		default:
+		}
+	}
+
+	return values
+}
+
+func (c *WeixinController) makeSign(values map[string]string) string {
 	var sign string
-	var ampersand string
 	var sortedKeys []string
 
 	for k := range values {
@@ -100,22 +121,23 @@ func (c *WeixinController) makeSign(values url.Values) string {
 
 	sort.Strings(sortedKeys)
 	for _, k := range sortedKeys {
-		sign += k + "=" + values[k][0] + ampersand
+		sign += k + "=" + values[k] + "&"
 	}
 
 	sign += "key=" + beego.AppConfig.String("weixin::apikey")
+	logger.I("拼接后字符串:%s\n", sign)
 
-	return common.GetMD5(sign)
+	return strings.ToUpper(common.GetMD5(sign))
 }
 
-func (c *WeixinController) checkPayResult(values url.Values) error {
+func (c *WeixinController) checkPayResult(values map[string]string) error {
 	appid, ok := values["appid"]
 	if !ok {
 		return errors.New(fmt.Sprintf("支付参数中没有appid信息，参数=%v", values))
 	}
 
-	if appid[0] != beego.AppConfig.String("weixin::appid") {
-		return errors.New(fmt.Sprintf("appid不匹配，期望=%s，收到=%s", beego.AppConfig.String("weixin::appid"), appid[0]))
+	if appid != beego.AppConfig.String("weixin::appid") {
+		return errors.New(fmt.Sprintf("appid不匹配，期望=%s，收到=%s", beego.AppConfig.String("weixin::appid"), appid))
 	}
 
 	sign, ok := values["sign"]
@@ -124,8 +146,8 @@ func (c *WeixinController) checkPayResult(values url.Values) error {
 	}
 
 	selfSign := c.makeSign(values)
-	if selfSign != sign[0] {
-		return errors.New(fmt.Sprintf("签名信息不匹配，期望=%s，收到=%s", selfSign, sign[0]))
+	if selfSign != sign {
+		return errors.New(fmt.Sprintf("签名信息不匹配，期望=%s，收到=%s", selfSign, sign))
 	}
 
 	return nil
@@ -138,20 +160,19 @@ func (c *WeixinController) PayResult() {
 
 	c.Data["xml"] = &resp
 	defer func() {
-		c.ServeXML()
+		data, err := xml.Marshal(&resp)
+		if err != nil {
+			logger.E("微信支付请求序列化结果到xml失败，err=%s，resp=%v", err.Error(), resp)
+			return
+		}
+
+		c.Ctx.WriteString(string(data))
 	}()
 
-	logger.I("body: %s\n", string(c.Ctx.Input.RequestBody))
-	values := c.Input()
+	values := c.parseXmlToMap(c.Ctx.Input.RequestBody)
 	err := c.checkPayResult(values)
 	if err != nil {
-		logger.E("微信支付请求验证失败: %s", err.Error())
-		return
-	}
-
-	attach, ok := values["attach"]
-	if !ok {
-		logger.E("微信支付请求参数中没有附加的attach信息, values=%v", values)
+		logger.E("微信支付请求验证失败，err=%s", err.Error())
 		return
 	}
 
@@ -167,28 +188,28 @@ func (c *WeixinController) PayResult() {
 		return
 	}
 
-	attachValues := strings.Split(attach[0], ",")
-	if len(attachValues) == 0 || len(attachValues[0]) == 0 {
-		logger.E("微信支付附加信息格式错误, attach=%s", attach[0])
+	out_trade_no, ok := values["out_trade_no"]
+	if len(out_trade_no) == 0 {
+		logger.E("微信支付请求参数中没有订单id, out_trade_no=%s", out_trade_no)
 		return
 	}
 
-	orderId, err := strconv.ParseInt(attachValues[0], 10, 64)
+	orderId, err := strconv.ParseInt(out_trade_no, 10, 64)
 	if err != nil {
-		logger.E("微信支付转换订单信息失败, orderId=%s", attachValues[0])
+		logger.E("微信支付转换订单信息失败, out_trade_no=%s", out_trade_no)
 		return
 	}
 
-	price, err := strconv.ParseFloat(totalFee[0], 64)
+	price, err := strconv.ParseFloat(totalFee, 64)
 	if err != nil {
-		logger.E("微信支付转换支付金额失败, totalFee=%s", totalFee[0])
+		logger.E("微信支付转换支付金额失败, totalFee=%s", totalFee)
 		return
 	}
 
 	price /= 100.0
 
-	if !models.DeliveryProduct(orderId, price, transId[0], true) {
-		logger.E("微信支付发送商品失败!\n[sdk_order_id=%s]\n%v", transId[0], values)
+	if !models.DeliveryProduct(orderId, price, transId, true) {
+		logger.E("微信支付发送商品失败，sdk_order_id=%s\nvalues=%v", transId, values)
 		return
 	}
 
