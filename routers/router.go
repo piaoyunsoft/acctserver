@@ -17,7 +17,7 @@ func init() {
 
 	beego.Router(beego.AppConfig.String("router::serverlist"), &controllers.GameController{}, "post:ServerList")
 	beego.Router(beego.AppConfig.String("router::entergame"), &controllers.GameController{}, "post:EnterGame")
-	beego.Router(beego.AppConfig.String("router::recharge"), &controllers.GameController{}, "post:Recharge")
+	// beego.Router(beego.AppConfig.String("router::recharge"), &controllers.GameController{}, "post:Recharge")
 
 	beego.Router(beego.AppConfig.String("router::patchlist"), &controllers.PatchController{}, "post:PatchList")
 
@@ -49,4 +49,7 @@ func init() {
 	beego.Router(beego.AppConfig.String("router::weixinpayreault"), &controllers.WeixinController{}, "post:PayResult")
 
 	beego.Router(beego.AppConfig.String("router::appleverifyreceipt"), &controllers.AppleController{}, "post:IAPVerifyReceipt")
+
+	beego.Router(beego.AppConfig.String("router::spsdkverify"), &controllers.SpsdkController{}, "post:Verify")
+	beego.Router(beego.AppConfig.String("router::spsdkpayresult"), &controllers.SpsdkController{}, "post:PayResult")
 }

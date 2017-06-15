@@ -372,19 +372,18 @@ func (c *MallController) CancelOrder() {
 		c.ServeJSON()
 	}()
 
-	opcode := mallOpcode{}
-	err := json.Unmarshal([]byte(c.GetString("req_data")), &opcode)
-	if err != nil {
-		result.ErrorCode = common.DATA_ILLEGAL
-		return
-	}
+	// opcode := mallOpcode{}
+	// err := json.Unmarshal([]byte(c.GetString("req_data")), &opcode)
+	// if err != nil {
+	// 	result.ErrorCode = common.DATA_ILLEGAL
+	// 	return
+	// }
 
-	// logger.D("%v\n%s", opcode, c.GetString("req_data"))
-
-	if !models.CancelOrder(opcode.Args.OrderID) {
-		result.ErrorCode = common.SUCCEED
-		return
-	}
+	// // logger.D("%v\n%s", opcode, c.GetString("req_data"))
+	// if !models.CancelOrder(opcode.Args.OrderID) {
+	// 	result.ErrorCode = common.SUCCEED
+	// 	return
+	// }
 	result.ErrorCode = common.SUCCEED
 }
 

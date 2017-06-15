@@ -41,6 +41,19 @@ func (m GameServer) TableName() string {
 	return "server_list"
 }
 
+func (m GameServer) GetOrm() (orm.Ormer, error) {
+	_, err := orm.GetDB(m.Name)
+	if err != nil {
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&autocommit=true", m.Login, m.Password, m.Ip, m.Port, m.Db)
+		logger.I("dsn:%s", dsn)
+		orm.RegisterDataBase(m.Name, "mysql", dsn)
+	}
+
+	o := orm.NewOrm()
+	err = o.Using(m.Name)
+	return o, err
+}
+
 func (m GameServer) WebLogin(accountId int64, strM, ip string) (int, error) {
 	_, err := orm.GetDB(m.Name)
 	if err != nil {
@@ -157,6 +170,67 @@ func (m GameServer) CharExists(dbid int64) bool {
 	}
 
 	return true
+}
+
+func (m GameServer) InsertOrder(order *Order) error {
+	o, err := m.GetOrm()
+	if err != nil {
+		return err
+	}
+
+	_, err = o.Raw("insert into mall_order values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		order.OrderID, order.AccountID, order.CharDBID, order.ServerID, order.ProductID, order.Price, order.ChannelOrderID, order.Channel, order.OrderTime, order.DeliveryTime, order.State).Exec()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m GameServer) FindOrder(orderId int64) (*Order, error) {
+	o, err := m.GetOrm()
+	if err != nil {
+		return nil, err
+	}
+
+	order := &Order{}
+	err = o.Raw("select * from mall_order where order_id=? limit 1", orderId).QueryRow(order)
+	if err != nil {
+		if err != orm.ErrNoRows {
+			logger.E(err.Error())
+		}
+		return nil, err
+	}
+	return order, nil
+}
+
+func (m GameServer) CountFinishedOrder(serverID int, productID int, chardDBID int64) (int, error) {
+	o, err := m.GetOrm()
+	if err != nil {
+		return 0, err
+	}
+
+	var count int
+	err = o.Raw("select count(order_id) from mall_order where product_id=? and server_id=? and char_dbid=? and state=1", productID, serverID, chardDBID).QueryRow(&count)
+	if err != nil {
+		if err != orm.ErrNoRows {
+			logger.E(err.Error())
+		}
+		return 0, err
+	}
+	return count, nil
+}
+
+func (m GameServer) UpdateOrder(order *Order) error {
+	o, err := m.GetOrm()
+	if err != nil {
+		return err
+	}
+
+	_, err = o.Raw("update mall_order set channel_order_id=?, delivery_time=?, state=? where order_id=?", order.ChannelOrderID, order.DeliveryTime, order.State, order.OrderID).Exec()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func GetServerList(game_id string, ip string, version string) []GameServer {

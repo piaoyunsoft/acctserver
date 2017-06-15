@@ -5,7 +5,6 @@ import (
 	"moton/acctserver/common"
 	"moton/acctserver/models"
 	"moton/logger"
-	"strconv"
 	"strings"
 
 	"github.com/astaxie/beego"
@@ -38,6 +37,7 @@ type buyitemArgs struct {
 
 type getServerArgs struct {
 	Version string `json:"version"`
+	GameId  string `json:"game_id"`
 }
 
 type gameOpcode struct {
@@ -113,8 +113,12 @@ func (c *GameController) ServerList() {
 		realAddr = fullAddr[:strings.LastIndex(fullAddr, ":")]
 	}
 	// logger.D("[%s], [%s], [%s], [%s]", c.Ctx.Request.RemoteAddr, realAddr, c.Ctx.Request.Header.Get("X-Forwarded-For"), c.Ctx.Request.Header.Get("Remote_addr"))
-	logger.D("GameID:%s, GameVersion:%s", user.GameID, args.Version)
-	serverList := models.GetServerList(user.GameID, realAddr, args.Version)
+	gameId := args.GameId
+	if gameId == "" {
+		gameId = user.GameID
+	}
+	logger.D("GameID:%s, GameVersion:%s", gameId, args.Version)
+	serverList := models.GetServerList(gameId, realAddr, args.Version)
 	for _, v := range serverList {
 		result.ServerList[v.Id] = gameServerInfo{
 			v.Isnew,
@@ -199,80 +203,80 @@ func (c *GameController) EnterGame() {
 	return
 }
 
-func (c *GameController) Recharge() {
-	result := gameResult{"do_recharge", common.SYSTEM_ERROR, common.GetErrorMsg(common.SYSTEM_ERROR), nil, 0, ""}
-	c.Data["json"] = &result
-	defer func() {
-		result.ErrorMsg = common.GetErrorMsg(result.ErrorCode)
-		c.ServeJSON()
-	}()
+// func (c *GameController) Recharge() {
+// 	result := gameResult{"do_recharge", common.SYSTEM_ERROR, common.GetErrorMsg(common.SYSTEM_ERROR), nil, 0, ""}
+// 	c.Data["json"] = &result
+// 	defer func() {
+// 		result.ErrorMsg = common.GetErrorMsg(result.ErrorCode)
+// 		c.ServeJSON()
+// 	}()
 
-	sessionObj := c.GetSession("user")
+// 	sessionObj := c.GetSession("user")
 
-	if sessionObj == nil {
-		result.ErrorCode = common.NEED_LOGIN_FIRST
-		return
-	}
+// 	if sessionObj == nil {
+// 		result.ErrorCode = common.NEED_LOGIN_FIRST
+// 		return
+// 	}
 
-	user := sessionObj.(*models.User)
+// 	user := sessionObj.(*models.User)
 
-	//验证用户
-	errcode := c.checkUser(user)
-	if errcode != common.SUCCEED {
-		result.ErrorCode = errcode
-		return
-	}
+// 	//验证用户
+// 	errcode := c.checkUser(user)
+// 	if errcode != common.SUCCEED {
+// 		result.ErrorCode = errcode
+// 		return
+// 	}
 
-	//解析参数
-	args := &rechargeArgs{}
-	opcode := gameOpcode{"", args}
-	err := json.Unmarshal([]byte(c.GetString("req_data")), &opcode)
-	if err != nil {
-		result.ErrorCode = common.DATA_ILLEGAL
-		logger.E(err.Error())
-		return
-	}
+// 	//解析参数
+// 	args := &rechargeArgs{}
+// 	opcode := gameOpcode{"", args}
+// 	err := json.Unmarshal([]byte(c.GetString("req_data")), &opcode)
+// 	if err != nil {
+// 		result.ErrorCode = common.DATA_ILLEGAL
+// 		logger.E(err.Error())
+// 		return
+// 	}
 
-	rechargeAmount, err := strconv.Atoi(args.Rmb)
-	if err != nil {
-		result.ErrorCode = common.DATA_ILLEGAL
-		return
-	}
+// 	rechargeAmount, err := strconv.Atoi(args.Rmb)
+// 	if err != nil {
+// 		result.ErrorCode = common.DATA_ILLEGAL
+// 		return
+// 	}
 
-	//获取服务器信息
-	gameServer := models.GetServer(args.ServerID)
-	if gameServer == nil {
-		result.ErrorCode = common.SERVER_ID_IS_INVALID
-		return
-	}
+// 	//获取服务器信息
+// 	gameServer := models.GetServer(args.ServerID)
+// 	if gameServer == nil {
+// 		result.ErrorCode = common.SERVER_ID_IS_INVALID
+// 		return
+// 	}
 
-	//获取充值配置信息
-	rechargeCfg := models.GetRechargeCfg(user.GameID, rechargeAmount)
-	if rechargeCfg == nil {
-		result.ErrorCode = common.USER_RECHARGE_RMB_VALUE_INVALID
-		return
-	}
+// 	//获取充值配置信息
+// 	rechargeCfg := models.GetRechargeCfg(user.GameID, rechargeAmount)
+// 	if rechargeCfg == nil {
+// 		result.ErrorCode = common.USER_RECHARGE_RMB_VALUE_INVALID
+// 		return
+// 	}
 
-	//检查是否是首次充值
-	bonusAmount := 0
-	ret, err := gameServer.IsFirstRecharge(user.AccountID, rechargeAmount)
-	if err != nil {
-		result.ErrorCode = common.USER_RECHARGE_UNKNOW_ERROR
-		return
-	}
+// 	//检查是否是首次充值
+// 	bonusAmount := 0
+// 	ret, err := gameServer.IsFirstRecharge(user.AccountID, rechargeAmount)
+// 	if err != nil {
+// 		result.ErrorCode = common.USER_RECHARGE_UNKNOW_ERROR
+// 		return
+// 	}
 
-	if ret {
-		bonusAmount = rechargeCfg.FirstRechargeBonus
-	}
+// 	if ret {
+// 		bonusAmount = rechargeCfg.FirstRechargeBonus
+// 	}
 
-	//执行充值操作
-	guid := strings.ToUpper(common.GetGUID())
-	err = gameServer.WebRecharge(guid, user.GameID, user.AccountID, rechargeCfg.ExchangeAmount, bonusAmount)
-	if err != nil {
-		result.ErrorCode = common.USER_RECHARGE_UNKNOW_ERROR
-		return
-	}
+// 	//执行充值操作
+// 	guid := strings.ToUpper(common.GetGUID())
+// 	err = gameServer.WebRecharge(guid, user.GameID, user.AccountID, rechargeCfg.ExchangeAmount, bonusAmount)
+// 	if err != nil {
+// 		result.ErrorCode = common.USER_RECHARGE_UNKNOW_ERROR
+// 		return
+// 	}
 
-	result.ErrorCode = common.SUCCEED
-	return
-}
+// 	result.ErrorCode = common.SUCCEED
+// 	return
+// }

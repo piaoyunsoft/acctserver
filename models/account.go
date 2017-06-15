@@ -1,7 +1,9 @@
 package models
 
 import (
+	"moton/acctserver/common"
 	"moton/logger"
+	"strings"
 
 	"github.com/astaxie/beego/orm"
 )
@@ -144,4 +146,39 @@ func AddAccountByChannel(guid, channel, channelAccountId, username, password, sa
 	}
 
 	return result
+}
+
+func ChannelLogin(channel, channelAccountId, ip string) (*AccountBase, int) {
+	acct := FindAccountByChannel(channel, channelAccountId)
+	if acct == nil {
+		salt := common.GetRandomString(18)
+		pwdMD5 := common.GetMD5(channelAccountId + salt)
+		guid := strings.ToUpper(common.GetGUID())
+		username := channel + channelAccountId
+		outResult := AddAccountByChannel(guid, channel, channelAccountId, username, pwdMD5, salt, ip)
+		if outResult == -1 {
+			return nil, common.SE_DB_HANDLER_ERROR
+		}
+
+		if outResult == 1 {
+			return nil, common.USERNAME_ALREADY_EXIST
+		}
+
+		if outResult == 2 {
+			logger.E("Guid already exist %s", guid)
+			return nil, common.USERNAME_ALREADY_EXIST
+		}
+
+		if outResult == 3 {
+			logger.E("Channel id already exist %s", channelAccountId)
+			return nil, common.USERNAME_ALREADY_EXIST
+		}
+	}
+
+	acct = FindAccountByChannel(channel, channelAccountId)
+	if acct == nil {
+		return nil, common.NOT_FIND_USERNAME
+	}
+
+	return acct, common.SUCCEED
 }

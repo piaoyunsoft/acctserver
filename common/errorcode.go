@@ -61,6 +61,7 @@ const (
 	CREATE_ORDER_ID_FAILED                  = 143 //生成订单号失败
 	INSERT_ORDER_FAILED                     = 144 //创建订单失败
 	ORDER_NOT_FINISHED                      = 145 //有未完成的订单
+	CHANNEL_LOGIN_VERIFY_FAILED             = 146 //渠道登录验证失败
 )
 
 var errorMsgMap map[int]string
@@ -127,6 +128,8 @@ func init() {
 	errorMsgMap[CREATE_ORDER_ID_FAILED] = "生成订单号失败"
 	errorMsgMap[INSERT_ORDER_FAILED] = "创建订单失败"
 	errorMsgMap[ORDER_NOT_FINISHED] = "有未完成的订单"
+	errorMsgMap[CHANNEL_LOGIN_VERIFY_FAILED] = "渠道登录验证失败"
+
 }
 
 //GetErrorMsg 根据错误值返回错误消息

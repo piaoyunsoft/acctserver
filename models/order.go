@@ -33,9 +33,20 @@ func ShowAutoCommit() {
 	}
 }
 
-func InsertOrder(order *Order) error {
-	defer ShowAutoCommit()
+// func FindMallOrder(int serverId) {
+// 	gameServer := GetServerById(serverId)
+// 	o := orm.NewOrm()
+// 	err := o.Raw("select * from server where id=? limit 1", serverID).QueryRow(gameServer)
+// 	if err != nil {
+// 		if err != orm.ErrNoRows {
+// 			logger.E(err.Error())
+// 		}
+// 		return nil
+// 	}
+// 	return gameServer
+// }
 
+func InsertOrder(order *Order) error {
 	o := orm.NewOrm()
 	_, err := o.Raw("insert into mall_order values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		order.OrderID, order.AccountID, order.CharDBID, order.ServerID, order.ProductID, order.Price, order.ChannelOrderID, order.Channel, order.OrderTime, order.DeliveryTime, order.State).Exec()
@@ -46,8 +57,6 @@ func InsertOrder(order *Order) error {
 }
 
 func GetOrder(orderID int64) *Order {
-	defer ShowAutoCommit()
-
 	order := &Order{}
 	o := orm.NewOrm()
 	err := o.Raw("select * from mall_order where order_id=? limit 1", orderID).QueryRow(order)
@@ -61,8 +70,6 @@ func GetOrder(orderID int64) *Order {
 }
 
 func GetOrderUnfinished(serverID int, charDBID int64) (*Order, error) {
-	defer ShowAutoCommit()
-
 	order := &Order{}
 	o := orm.NewOrm()
 	err := o.Raw("select * from mall_order where server_id=? and char_dbid=? and state=0", serverID, charDBID).QueryRow(order)
@@ -77,8 +84,6 @@ func GetOrderUnfinished(serverID int, charDBID int64) (*Order, error) {
 }
 
 func GetOrderFinishedCount(productID int, serverID int, chardDBID int64) (int, error) {
-	defer ShowAutoCommit()
-
 	var count int
 	o := orm.NewOrm()
 	err := o.Raw("select count(order_id) from mall_order where product_id=? and server_id=? and char_dbid=? and state=1", productID, serverID, chardDBID).QueryRow(&count)
@@ -92,8 +97,6 @@ func GetOrderFinishedCount(productID int, serverID int, chardDBID int64) (int, e
 }
 
 func UpdateOrder(order *Order) error {
-	defer ShowAutoCommit()
-
 	o := orm.NewOrm()
 	_, err := o.Raw("update mall_order set channel_order_id=?, delivery_time=?, state=? where order_id=?", order.ChannelOrderID, order.DeliveryTime, order.State, order.OrderID).Exec()
 	if err != nil {
@@ -103,8 +106,6 @@ func UpdateOrder(order *Order) error {
 }
 
 func CancelOrder(orderID int64) bool {
-	defer ShowAutoCommit()
-
 	order := GetOrder(orderID)
 	if order == nil {
 		logger.E("找不到订单！")
